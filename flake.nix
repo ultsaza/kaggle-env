@@ -18,7 +18,10 @@
       devShells = forAllSystems (
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+          };
 
           runtimeLibs = with pkgs; [
             stdenv.cc.cc.lib
