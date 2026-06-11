@@ -64,10 +64,6 @@
               p7zip
               unzip
 
-              # AI coding assistants.
-              claude-code
-              codex
-
               # Native libraries used by geospatial, image, OCR, and plotting packages.
               boost
               fontconfig
