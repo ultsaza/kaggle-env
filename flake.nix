@@ -99,46 +99,36 @@
             PROJ_LIB = "${pkgs.proj}/share/proj";
 
             shellHook = ''
-                            mkdir -p .kaggle/input .kaggle/working
-                            export KAGGLE_INPUT_DIR="$PWD/.kaggle/input"
-                            export KAGGLE_WORKING_DIR="$PWD/.kaggle/working"
+              mkdir -p .kaggle/input .kaggle/working
+              export KAGGLE_INPUT_DIR="$PWD/.kaggle/input"
+              export KAGGLE_WORKING_DIR="$PWD/.kaggle/working"
 
-                            use-kaggle-libs() {
-                              export LD_LIBRARY_PATH="$KAGGLE_NATIVE_LIBRARY_PATH''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-                            }
+              use-kaggle-libs() {
+                export LD_LIBRARY_PATH="$KAGGLE_NATIVE_LIBRARY_PATH''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              }
 
-                            if [ ! -x "$UV_PROJECT_ENVIRONMENT/bin/python" ]; then
-                              uv venv --python "$KAGGLE_BASE_PYTHON" "$UV_PROJECT_ENVIRONMENT"
-                            fi
+              if [ ! -x "$UV_PROJECT_ENVIRONMENT/bin/python" ]; then
+                uv venv --python "$KAGGLE_BASE_PYTHON" "$UV_PROJECT_ENVIRONMENT"
+              fi
 
-                            export VIRTUAL_ENV="$PWD/$UV_PROJECT_ENVIRONMENT"
-                            export PATH="$VIRTUAL_ENV/bin:$PATH"
-                            export UV_PYTHON="$VIRTUAL_ENV/bin/python"
+              export VIRTUAL_ENV="$PWD/$UV_PROJECT_ENVIRONMENT"
+              export PATH="$VIRTUAL_ENV/bin:$PATH"
+              export UV_PYTHON="$VIRTUAL_ENV/bin/python"
 
-                            if [ "''${KAGGLE_UV_SYNC:-0}" = "1" ]; then
-                              if [ -f uv.lock ]; then
-                                uv sync --locked
-                              elif [ -f pyproject.toml ]; then
-                                uv sync
-                              elif [ -f kaggle_requirements.lock.txt ]; then
-                                uv pip sync kaggle_requirements.lock.txt
-                              elif [ -f kaggle_requirements.in ]; then
-                                uv pip install -r kaggle_requirements.in
-                              fi
-                            fi
-
-                            cat <<'EOF'
-              Kaggle-like uv shell is ready.
-
-              Common commands:
-                uv lock --upgrade
-                uv sync --locked
-                python -m ipykernel install --user --name kaggle-uv --display-name "Python (kaggle-uv)"
-                use-kaggle-libs  # opt-in if a wheel cannot find native shared libraries
-
-              Run one-shot dependency sync on shell entry:
-                KAGGLE_UV_SYNC=1 nix develop
-              EOF
+              if [ "''${KAGGLE_UV_SYNC:-0}" = "1" ]; then
+                if [ -f uv.lock ]; then
+                  uv sync --locked
+                elif [ -f pyproject.toml ]; then
+                  uv sync
+                elif [ -f kaggle_requirements.lock.txt ]; then
+                  uv pip sync kaggle_requirements.lock.txt
+                elif [ -f kaggle_requirements.in ]; then
+                  uv pip install -r kaggle_requirements.in
+                fi
+              fi
+              printf '+-----------------------------------------------------------------+\n'
+              printf '\t \n\033[1;34m welcome to kaggle environment ❄\033[0m\n\n'
+              printf '+-----------------------------------------------------------------+\n'
             '';
           };
         }
