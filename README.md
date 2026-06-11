@@ -59,6 +59,37 @@ kaggle auth login
 
 6(optional). setup coding agent tools
 
+```sh
+codex
+claude
+```
+
+7(optional). set a default kaggle dataset id
+
+append it to `.envrc` so direnv loads it automatically:
+
+```sh
+echo 'export KAGGLE_DATASET_ID=yourteam/xxx' >> .envrc
+direnv allow .
+```
+
+## upload a file to the shared Kaggle dataset
+
+```sh
+bin/kaggle-upload -d yourteam/xxx [upload-file-path]
+```
+
+if `KAGGLE_DATASET_ID` is set (step 7), you can omit `-d`:
+
+```sh
+bin/kaggle-upload [upload-file-path]
+```
+
+optional: you can edit the version message
+
+```sh
+bin/kaggle-upload -m "message" [upload-file-path]
+```
 
 
 

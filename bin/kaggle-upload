@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+#
+# kaggle-upload — add/update a single file in a SHARED Kaggle dataset (Pattern B).
+#
+# Kaggle dataset versions are full snapshots: `kaggle datasets version` replaces
+# the whole file set with whatever is in the upload folder. So to keep a teammate's
+# existing files intact while adding/updating just one file, we must:
+#
+#     download current contents  ->  drop the new file in  ->  upload as a new version
+#
+# Each collaborator runs this with THEIR OWN `kaggle auth login`; the dataset id
+# (owner/slug) stays fixed for the whole team.
+#
+# Usage:
+#   kaggle-upload [-d owner/slug] [-m message] [-n new_name] [--convert] [-q] <file> [<file>...]
+#
+#   -d owner/slug   Target dataset id. Falls back to $KAGGLE_DATASET_ID. Required.
+#   -m message      Version note (default: "add/update <files> (<date>)").
+#   -n new_name     Rename the uploaded file in the dataset (only with a single file).
+#   --convert       Allow Kaggle to convert tabular files to CSV (default: keep raw bytes).
+#   -q              Quiet: suppress kaggle progress output.
+#   -h              Show this help.
+#
+# Examples:
+#   kaggle-upload -d myteam/shared-data ./model.pkl
+#   KAGGLE_DATASET_ID=myteam/shared-data kaggle-upload -m "retrain" ./model.pkl
+#   kaggle-upload -d myteam/shared-data -n weights_v2.pkl ./out/weights.pkl
+
+set -euo pipefail
+
+log() { printf '>> %s\n' "$*" >&2; }
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+usage() { awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"; exit "${1:-0}"; }
+
+dataset_id="${KAGGLE_DATASET_ID:-}"
+message=""
+new_name=""
+keep_tabular=1   # 1 = pass -t (keep raw); 0 = let Kaggle convert tabular -> CSV
+quiet=0
+files=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -d) dataset_id="${2:-}"; shift 2 ;;
+    -m) message="${2:-}"; shift 2 ;;
+    -n) new_name="${2:-}"; shift 2 ;;
+    --convert) keep_tabular=0; shift ;;
+    -q) quiet=1; shift ;;
+    -h|--help) usage 0 ;;
+    --) shift; while [ $# -gt 0 ]; do files+=("$1"); shift; done ;;
+    -*) die "unknown option: $1 (use -h for help)" ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+
+# ---- validate inputs -------------------------------------------------------
+[ -n "$dataset_id" ] || die "no dataset id. Pass -d owner/slug or set \$KAGGLE_DATASET_ID."
+case "$dataset_id" in
+  */*) : ;;
+  *) die "dataset id must be in 'owner/slug' form, got: $dataset_id" ;;
+esac
+[ "${#files[@]}" -gt 0 ] || die "no file given. Usage: kaggle-upload [-d owner/slug] <file>..."
+[ -z "$new_name" ] || [ "${#files[@]}" -eq 1 ] || die "-n can only be used with a single file."
+
+for f in "${files[@]}"; do
+  [ -f "$f" ] || die "not a file: $f"
+done
+
+command -v kaggle >/dev/null 2>&1 || die "kaggle CLI not found on PATH (did the devshell load?)."
+
+# `kaggle datasets metadata` downloads a {"info": {...}} document with NO top-level
+# `id`, but `version`/`create` require a top-level `id`. Use python (the kaggle stack
+# is python anyway) to normalize the fetched metadata into the upload schema.
+pybin="$(command -v python3 || command -v python || true)"
+[ -n "$pybin" ] || die "python not found; needed to normalize dataset metadata."
+
+normalize_metadata() {
+  local meta="$1" id="$2"
+  "$pybin" - "$meta" "$id" <<'PY'
+import json, os, sys
+path, dataset_id = sys.argv[1], sys.argv[2]
+slug = dataset_id.split("/", 1)[1]
+info = {}
+if os.path.exists(path):
+    try:
+        with open(path) as f:
+            info = json.load(f)
+        info = info.get("info", info) or {}
+    except Exception:
+        info = {}
+out = {"id": dataset_id, "title": info.get("title") or slug}
+if info.get("licenses"):      out["licenses"] = info["licenses"]
+if info.get("description"):   out["description"] = info["description"]
+sub = info.get("subtitle") or ""
+if 20 <= len(sub) <= 80:      out["subtitle"] = sub   # version enforces 20..80 chars
+with open(path, "w") as f:
+    json.dump(out, f, indent=2)
+PY
+}
+
+# build kaggle flag arrays
+tab_flag=(); [ "$keep_tabular" -eq 1 ] && tab_flag=(-t)
+quiet_flag=(); [ "$quiet" -eq 1 ] && quiet_flag=(-q)
+
+if [ -z "$message" ]; then
+  base_list=""
+  for f in "${files[@]}"; do base_list="$base_list $(basename "$f")"; done
+  message="add/update${base_list} ($(date +%F))"
+fi
+
+# ---- stage in a temp folder ------------------------------------------------
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/kaggle-upload.XXXXXX")"
+trap 'rm -rf "$tmp"' EXIT
+
+if kaggle datasets status "$dataset_id" >/dev/null 2>&1; then
+  # ---- existing dataset: download -> add -> version ------------------------
+  log "dataset '$dataset_id' exists — fetching current contents (Pattern B)"
+  kaggle datasets download "$dataset_id" -p "$tmp" --unzip "${quiet_flag[@]}" \
+    || die "failed to download '$dataset_id' (do you have access / network?)."
+
+  # Fetch existing metadata (best-effort) to keep title/license, then rewrite it
+  # into the create/version schema with a top-level `id` (the raw download lacks one).
+  kaggle datasets metadata "$dataset_id" -p "$tmp" >/dev/null 2>&1 || true
+  normalize_metadata "$tmp/dataset-metadata.json" "$dataset_id"
+
+  mode="version"
+else
+  # ---- dataset does not exist (or no access): create a fresh snapshot ------
+  log "dataset '$dataset_id' not found — creating a new dataset"
+  slug="${dataset_id#*/}"
+  cat > "$tmp/dataset-metadata.json" <<EOF
+{
+  "title": "$slug",
+  "id": "$dataset_id",
+  "licenses": [{ "name": "CC0-1.0" }]
+}
+EOF
+  mode="create"
+fi
+
+# ---- drop the new file(s) in (overwrite same name = update) ----------------
+if [ -n "$new_name" ]; then
+  cp -f -- "${files[0]}" "$tmp/$new_name"
+  log "staged $(basename "${files[0]}") as $new_name"
+else
+  for f in "${files[@]}"; do
+    cp -f -- "$f" "$tmp/$(basename "$f")"
+    log "staged $(basename "$f")"
+  done
+fi
+
+# ---- upload ----------------------------------------------------------------
+if [ "$mode" = "version" ]; then
+  log "uploading new version of '$dataset_id'"
+  kaggle datasets version -p "$tmp" -m "$message" "${tab_flag[@]}" "${quiet_flag[@]}"
+else
+  log "uploading new dataset '$dataset_id'"
+  kaggle datasets create -p "$tmp" "${tab_flag[@]}" "${quiet_flag[@]}"
+fi
+
+log "done: https://www.kaggle.com/datasets/$dataset_id"
