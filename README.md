@@ -91,5 +91,18 @@ optional: you can edit the version message
 bin/kaggle-upload -m "message" [upload-file-path]
 ```
 
+## lambda 
 
+terminate instance
+
+```
+curl --request POST --url 'https://cloud.lambda.ai/api/v1/instance-operations/terminate' \
+     --header 'accept: application/json' \
+     --header 'Authorization: Bearer <YOUR-API-KEY>' \
+     --data '{
+  "instance_ids": [
+    "0920582c7ff041399e34823a0be62549"
+  ]
+}'
+```
 
