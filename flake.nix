@@ -91,6 +91,7 @@
             ];
 
             KAGGLE_BASE_PYTHON = "${pkgs.python312}/bin/python3.12";
+            KAGGLE_UV = "${pkgs.uv}/bin/uv";
             UV_PROJECT_ENVIRONMENT = ".venv";
             KAGGLE_NATIVE_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
             NIX_LD = pkgs.stdenv.cc.bintools.dynamicLinker;
@@ -108,7 +109,7 @@
               }
 
               if [ ! -x "$UV_PROJECT_ENVIRONMENT/bin/python" ]; then
-                uv venv --python "$KAGGLE_BASE_PYTHON" "$UV_PROJECT_ENVIRONMENT"
+                "$KAGGLE_UV" venv --python "$KAGGLE_BASE_PYTHON" "$UV_PROJECT_ENVIRONMENT"
               fi
 
               export VIRTUAL_ENV="$PWD/$UV_PROJECT_ENVIRONMENT"
@@ -117,13 +118,13 @@
 
               if [ "''${KAGGLE_UV_SYNC:-0}" = "1" ]; then
                 if [ -f uv.lock ]; then
-                  uv sync --locked
+                  "$KAGGLE_UV" sync --locked
                 elif [ -f pyproject.toml ]; then
-                  uv sync
+                  "$KAGGLE_UV" sync
                 elif [ -f kaggle_requirements.lock.txt ]; then
-                  uv pip sync kaggle_requirements.lock.txt
+                  "$KAGGLE_UV" pip sync kaggle_requirements.lock.txt
                 elif [ -f kaggle_requirements.in ]; then
-                  uv pip install -r kaggle_requirements.in
+                  "$KAGGLE_UV" pip install -r kaggle_requirements.in
                 fi
               fi
               printf '+-----------------------------------------------------------------+\n'
