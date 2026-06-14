@@ -94,16 +94,7 @@ ln -sf "$HOME/.local/bin/nix-portable" "$HOME/.local/bin/nix"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-2. force proot if nix-portable does not select it automatically
-
-```sh
-export NP_RUNTIME=proot
-```
-
-omit `NP_RUNTIME=proot` to let nix-portable pick bwrap when user namespaces are
-available (faster).
-
-3. allow direnv
+2. allow direnv
 
 ```sh
 direnv allow .
