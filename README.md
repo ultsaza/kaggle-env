@@ -50,7 +50,8 @@ and run next;
 direnv allow .
 ```
 
-then, installed all dependencies and setup devshell
+direnv loads the environment automatically when you enter this directory,
+runs `uv sync`, and activates `.venv`.
 
 5. auth kaggle cli
 
@@ -76,46 +77,41 @@ direnv allow .
 
 ## setup without root (proot via nix-portable)
 
-if you can't install the Nix daemon (no root) — e.g. inside a Kaggle kernel or a
-locked-down server — use [nix-portable](https://github.com/DavHau/nix-portable)
-instead of steps 2–4. it is a single static binary that virtualizes `/nix/store`
-under `$HOME` and falls back to **proot** when user namespaces are unavailable.
-direnv is not used in this route; you enter the devshell manually.
+if you can't install the Nix daemon (no root), e.g. inside a Kaggle kernel or a
+locked-down server, use [nix-portable](https://github.com/DavHau/nix-portable)
+instead of step 3. follow steps 1 and 2 above, then run the steps below from the
+repository directory. nix-portable is a single static binary that virtualizes
+`/nix/store` under `$HOME` and falls back to **proot** when user namespaces are
+unavailable. direnv still loads the project environment from `.envrc`.
 
-1. clone and enter the repository
-
-```sh
-git clone https://github.com/ultsaza/kaggle-env.git
-cd kaggle-env
-```
-
-2. download the nix-portable binary
+1. install nix-portable as `nix`
 
 ```sh
-curl -L https://github.com/DavHau/nix-portable/releases/latest/download/nix-portable-$(uname -m) > ./nix-portable
-chmod +x ./nix-portable
+mkdir -p "$HOME/.local/bin"
+curl -L https://github.com/DavHau/nix-portable/releases/latest/download/nix-portable-$(uname -m) > "$HOME/.local/bin/nix-portable"
+chmod +x "$HOME/.local/bin/nix-portable"
+ln -sf "$HOME/.local/bin/nix-portable" "$HOME/.local/bin/nix"
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-3. enter the flake devshell through proot
+2. force proot if nix-portable does not select it automatically
 
 ```sh
-NP_RUNTIME=proot ./nix-portable nix develop
+export NP_RUNTIME=proot
 ```
 
-the first run downloads nixpkgs and the devshell into `$HOME/.nix-portable`
-(this takes a while; proot adds overhead). the shellHook creates `.venv`
-automatically. omit `NP_RUNTIME=proot` to let nix-portable pick bwrap when user
-namespaces are available (faster).
+omit `NP_RUNTIME=proot` to let nix-portable pick bwrap when user namespaces are
+available (faster).
 
-4. install Python dependencies (inside the devshell)
+3. allow direnv
 
 ```sh
-uv sync
+direnv allow .
 ```
 
-or set `KAGGLE_UV_SYNC=1` before step 3 to sync automatically on entry.
-
-then continue from step 5 (`kaggle auth login`) above.
+the first run downloads nixpkgs and project dependencies into
+`$HOME/.nix-portable` and `.venv`. then continue from step 5
+(`kaggle auth login`) above.
 
 ## upload a file to the shared Kaggle dataset
 
