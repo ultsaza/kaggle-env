@@ -39,6 +39,7 @@ and **relaunch shell**
 4. direnv setup
 
 move to cloned repository
+
 ```sh
 cd kaggle-env
 ```
@@ -73,6 +74,49 @@ echo 'export KAGGLE_DATASET_ID=yourteam/xxx' >> .envrc
 direnv allow .
 ```
 
+## setup without root (proot via nix-portable)
+
+if you can't install the Nix daemon (no root) — e.g. inside a Kaggle kernel or a
+locked-down server — use [nix-portable](https://github.com/DavHau/nix-portable)
+instead of steps 2–4. it is a single static binary that virtualizes `/nix/store`
+under `$HOME` and falls back to **proot** when user namespaces are unavailable.
+direnv is not used in this route; you enter the devshell manually.
+
+1. clone and enter the repository
+
+```sh
+git clone https://github.com/ultsaza/kaggle-env.git
+cd kaggle-env
+```
+
+2. download the nix-portable binary
+
+```sh
+curl -L https://github.com/DavHau/nix-portable/releases/latest/download/nix-portable-$(uname -m) > ./nix-portable
+chmod +x ./nix-portable
+```
+
+3. enter the flake devshell through proot
+
+```sh
+NP_RUNTIME=proot ./nix-portable nix develop
+```
+
+the first run downloads nixpkgs and the devshell into `$HOME/.nix-portable`
+(this takes a while; proot adds overhead). the shellHook creates `.venv`
+automatically. omit `NP_RUNTIME=proot` to let nix-portable pick bwrap when user
+namespaces are available (faster).
+
+4. install Python dependencies (inside the devshell)
+
+```sh
+uv sync
+```
+
+or set `KAGGLE_UV_SYNC=1` before step 3 to sync automatically on entry.
+
+then continue from step 5 (`kaggle auth login`) above.
+
 ## upload a file to the shared Kaggle dataset
 
 ```sh
@@ -91,3 +135,8 @@ optional: you can edit the version message
 bin/kaggle-upload -m "message" [upload-file-path]
 ```
 
+## update tools (not python dependencies)
+
+```sh
+nix flake update
+```
