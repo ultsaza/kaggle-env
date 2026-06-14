@@ -50,8 +50,10 @@ and run next;
 direnv allow .
 ```
 
-direnv loads the environment automatically when you enter this directory,
-runs `uv sync`, and activates `.venv`.
+direnv loads the environment automatically when you enter this directory. when
+the Nix store is present on the host (`/nix/store`), the `.envrc` activates the
+flake, runs `uv sync`, and activates `.venv`; otherwise (the nix-portable case,
+see below) it skips activation and prints a hint to use `nix develop`.
 
 5. auth kaggle cli
 
@@ -131,11 +133,56 @@ KAGGLE_UV_SYNC=1 nix develop --command python main.py
 
 then continue from step 5 (`kaggle auth login`) above.
 
-if `/nix` is not writable and you must use
-[nix-portable](https://github.com/DavHau/nix-portable), use
-`nix develop --command ...` instead of relying on automatic `direnv` activation.
-nix-portable virtualizes `/nix/store`, and programs launched outside
-nix-portable cannot always access those store paths.
+### using nix-portable (no writable `/nix`)
+
+if you cannot get a writable `/nix` at all (e.g. a hardened host where even
+`sudo mkdir /nix` is not possible), use
+[nix-portable](https://github.com/DavHau/nix-portable). it ships Nix as a single
+static binary and virtualizes `/nix/store` **inside its own sandbox**, so `/nix`
+never exists on the host filesystem.
+
+because of that, `direnv` cannot expose the flake's tools to your interactive
+shell: the dev-shell `PATH` it would export points at `/nix/store/...` locations
+that are only reachable from within nix-portable. the `.envrc` detects the
+missing `/nix/store` and skips flake activation, so entering the directory just
+prints a reminder. work through `nix develop` (which enters the sandbox) instead
+of relying on `cd`.
+
+1. install nix-portable as `nix`
+
+```sh
+mkdir -p "$HOME/.local/bin"
+curl -L https://github.com/DavHau/nix-portable/releases/latest/download/nix-portable-$(uname -m) > "$HOME/.local/bin/nix-portable"
+chmod +x "$HOME/.local/bin/nix-portable"
+ln -sf "$HOME/.local/bin/nix-portable" "$HOME/.local/bin/nix"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+also enable flakes and `nix-direnv` exactly as in steps 1–2 of the no-daemon
+section above (the `nix.conf` `experimental-features` line and the `direnvrc`
+snippet).
+
+2. allow direnv
+
+```sh
+direnv allow .
+```
+
+entering the directory now only prints a reminder; it does not put `uv` on your
+`PATH`.
+
+3. work inside `nix develop`
+
+```sh
+KAGGLE_UV_SYNC=1 nix develop          # first run / after changing deps: also runs uv sync
+nix develop                           # later: just enter the shell
+nix develop --command python main.py  # one-off command
+```
+
+anything that needs the project tools or `.venv` — `python`, `uv`,
+`bin/kaggle-upload`, the `kaggle` CLI — must be run from inside `nix develop`.
+the generated `.venv` is only usable there, because its interpreter points into
+the virtualized store. then continue from step 5 (`kaggle auth login`) above.
 
 ## upload a file to the shared Kaggle dataset
 
