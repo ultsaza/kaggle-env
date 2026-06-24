@@ -184,6 +184,49 @@ anything that needs the project tools or `.venv` — `python`, `uv`,
 the generated `.venv` is only usable there, because its interpreter points into
 the virtualized store. then continue from step 5 (`kaggle auth login`) above.
 
+#### nix-portable runtime selection
+
+although this setup is often described as "proot Nix", nix-portable does not
+always run through `proot`. it auto-selects a runtime from the mechanisms that
+work on the host. depending on kernel and cluster policy, the selected runtime
+may be `bwrap` instead.
+
+if `nix` starts with `Fatal error: nix is unable to build packages`, inspect the
+runtime decision with debug output:
+
+```sh
+NP_DEBUG=1 nix --version
+```
+
+to reproduce and compare specific runtimes, force them explicitly:
+
+```sh
+NP_RUNTIME=proot NP_DEBUG=1 nix --version
+NP_RUNTIME=bwrap NP_DEBUG=1 nix --version
+```
+
+the approach is:
+
+1. run `nix --version` once to let nix-portable unpack and choose a runtime;
+2. if it fails, rerun with `NP_DEBUG=1` to see the selected runtime and failing
+   command;
+3. force `NP_RUNTIME=proot` and `NP_RUNTIME=bwrap` separately to identify which
+   runtime the host allows;
+4. persist only the host-specific fix, then verify with
+   `nix develop --command python main.py`.
+
+for example, on hosts where `ptrace` is blocked, `proot` can fail with
+`ptrace(TRACEME): Operation not permitted`. in that case `bwrap` may be the
+working runtime. on Lustre-backed filesystems, `bwrap` can also expose Nix store
+copy failures around the `lustre.lov` extended attribute. add it to the Nix
+ignored ACL list:
+
+```sh
+mkdir -p "$HOME/.config/nix"
+grep -q 'lustre.lov' "$HOME/.config/nix/nix.conf" 2>/dev/null \
+  || printf 'ignored-acls = security.selinux system.nfs4_acl lustre.lov\n' >> "$HOME/.config/nix/nix.conf"
+```
+
 ## upload a file to the shared Kaggle dataset
 
 ```sh
