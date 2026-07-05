@@ -113,7 +113,7 @@
               fi
 
               export VIRTUAL_ENV="$PWD/$UV_PROJECT_ENVIRONMENT"
-              export PATH="$VIRTUAL_ENV/bin:$PATH"
+              export PATH="$PWD/bin:$VIRTUAL_ENV/bin:$PATH"
               export UV_PYTHON="$VIRTUAL_ENV/bin/python"
 
               if [ "''${KAGGLE_UV_SYNC:-0}" = "1" ]; then
