@@ -128,7 +128,7 @@
                 fi
               fi
               printf '+-----------------------------------------------------------------+\n'
-              printf '\t \n\033[1;34m welcome to kaggle environment ❄\033[0m\n\n'
+              printf '\t \n\033[1;34m welcome to kaggle environment \uf313\033[0m\n\n'
               printf '+-----------------------------------------------------------------+\n'
             '';
           };
