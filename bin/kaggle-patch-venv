@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Bake KAGGLE_NATIVE_LIBRARY_PATH into every native library in the venv as
+# DT_RPATH so imports work without LD_LIBRARY_PATH under the nix-store python.
+# DT_RPATH (not RUNPATH) is required: manylinux wheels rely on rpath
+# transitivity for mangled bundled sonames (auditwheel uses --force-rpath too).
+set -euo pipefail
+
+venv="${1:-${VIRTUAL_ENV:-$PWD/.venv}}"
+libpath="${KAGGLE_NATIVE_LIBRARY_PATH:?KAGGLE_NATIVE_LIBRARY_PATH is not set; enter the dev shell first}"
+
+[ -x "$venv/bin/python" ] || exit 0
+
+stamp="$venv/.kaggle-rpath-stamp"
+key="v1 $(printf '%s' "$libpath" | sha256sum | cut -d' ' -f1)"
+
+fresh() {
+  [ -f "$stamp" ] &&
+    [ "$(cat "$stamp" 2>/dev/null)" = "$key" ] &&
+    [ -z "$(find "$venv" -type f \( -name '*.so' -o -name '*.so.*' \) \
+            -cnewer "$stamp" -print -quit)" ]
+}
+
+fresh && exit 0
+
+# One patch run at a time per venv (patchelf rewrites are not atomic).
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$stamp.lock"
+  flock 9
+  fresh && exit 0
+fi
+
+export _KPV_LIBPATH="$libpath"
+find "$venv" -type f \( -name '*.so' -o -name '*.so.*' \) -print0 |
+  xargs -0 -r -P "$(nproc 2>/dev/null || echo 4)" -n 32 bash -c '
+    set -u
+    for f in "$@"; do
+      old=$(patchelf --print-rpath "$f" 2>/dev/null) || continue  # skip non-ELF
+
+      # Existing entries first ($ORIGIN dirs must keep winning), drop stale
+      # /nix/store entries, append the current native library path.
+      IFS=: read -r -a parts <<< "$old"
+      keep=()
+      for e in "${parts[@]}"; do
+        case $e in "" | /nix/store/*) ;; *) keep+=("$e") ;; esac
+      done
+      new=$(IFS=:; printf "%s" "${keep[*]-}")
+      new="${new:+$new:}$_KPV_LIBPATH"
+
+      if [ "$new" = "$old" ] && readelf -d "$f" 2>/dev/null | grep -q "(RPATH)"; then
+        continue
+      fi
+
+      # Break hardlinks into ~/.cache/uv before mutating the inode.
+      if [ "$(stat -c %h "$f")" -gt 1 ]; then
+        cp -p "$f" "$f.kpv-tmp.$$" && mv -f "$f.kpv-tmp.$$" "$f"
+      fi
+
+      patchelf --force-rpath --set-rpath "$new" "$f" ||
+        printf "kaggle-patch-venv: warning: could not patch %s\n" "$f" >&2
+    done
+    exit 0
+  ' _
+
+printf '%s' "$key" > "$stamp"

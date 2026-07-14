@@ -245,6 +245,33 @@ optional: you can edit the version message
 bin/kaggle-upload -m "message" [upload-file-path]
 ```
 
+## native libraries for Python packages (libstdc++, etc.)
+
+the venv uses the nix-store Python, whose loader does not see the host's
+`/etc/ld.so.cache`. some PyPI wheels (e.g. `greenlet`, some of `wandb`'s
+dependencies) dynamically link against `libstdc++.so.6` and friends instead of
+bundling their own copy, so a plain `import` of them would fail with
+`ImportError: libstdc++.so.6: cannot open shared object file`.
+
+`bin/kaggle-patch-venv` fixes this by baking `KAGGLE_NATIVE_LIBRARY_PATH` into
+every native library under `.venv` as an RPATH. it runs automatically every
+time you enter the shell (via `.envrc` and the `flake.nix` shellHook, so it
+also covers the nix-portable `nix develop` path) and is a no-op after the
+first run unless the venv actually changed. if you `uv add` a package in the
+middle of a session, either wait for the next shell prompt (direnv reloads on
+`uv.lock` changes) or run `bin/kaggle-patch-venv` manually.
+
+for the rare native binary that isn't a `.so` inside `.venv` (e.g. a
+standalone downloaded tool), use the `use-kaggle-libs` shell function to
+export `LD_LIBRARY_PATH` for the current shell instead of patching it.
+
+note: packages get hardlinked from `~/.cache/uv` into `.venv` by default;
+`bin/kaggle-patch-venv` breaks the hardlink before patching so it never
+rewrites the shared cache. if you ever see a *different* uv project's
+image/geo/ML packages fail to import with a similar shared-library error,
+that project's `.venv` may have been hardlinked from a copy this repo patched
+before `UV_LINK_MODE = "copy"` was added — `uv cache clean` clears it.
+
 ## update tools (not python dependencies)
 
 ```sh

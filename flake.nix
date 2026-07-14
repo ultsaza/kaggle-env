@@ -56,6 +56,7 @@
               cmake
               gcc
               gnumake
+              patchelf
               pkg-config
 
               # CLI utilities and notebook-adjacent tools.
@@ -93,6 +94,10 @@
             KAGGLE_BASE_PYTHON = "${pkgs.python312}/bin/python3.12";
             KAGGLE_UV = "${pkgs.uv}/bin/uv";
             UV_PROJECT_ENVIRONMENT = ".venv";
+            # Avoid hardlinking venv packages from the uv cache: bin/kaggle-patch-venv
+            # rewrites installed .so files in place, which would otherwise corrupt
+            # the shared cache inode.
+            UV_LINK_MODE = "copy";
             KAGGLE_NATIVE_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
             NIX_LD = pkgs.stdenv.cc.bintools.dynamicLinker;
             NIX_LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
@@ -110,6 +115,8 @@
               export KAGGLE_INPUT_DIR="$PWD/.kaggle/input"
               export KAGGLE_WORKING_DIR="$PWD/.kaggle/working"
 
+              # Escape hatch for host-loader binaries that bin/kaggle-patch-venv can't
+              # reach (anything not installed as a .so inside .venv).
               use-kaggle-libs() {
                 export LD_LIBRARY_PATH="$KAGGLE_NATIVE_LIBRARY_PATH''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
               }
@@ -132,6 +139,11 @@
                 elif [ -f kaggle_requirements.in ]; then
                   "$KAGGLE_UV" pip install -r kaggle_requirements.in
                 fi
+              fi
+
+              if [ -x "$VIRTUAL_ENV/bin/python" ] && [ -x "$PWD/bin/kaggle-patch-venv" ]; then
+                "$PWD/bin/kaggle-patch-venv" \
+                  || printf 'kaggle-patch-venv failed; native imports may need use-kaggle-libs\n' >&2
               fi
               printf '+-----------------------------------------------------------------+\n'
               printf '\t \n\033[1;34m welcome to kaggle environment \uf313\033[0m\n\n'
