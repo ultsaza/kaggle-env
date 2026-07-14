@@ -99,6 +99,12 @@
             GDAL_DATA = "${pkgs.gdal}/share/gdal";
             PROJ_LIB = "${pkgs.proj}/share/proj";
 
+            # `playwright` in pyproject.toml must be pinned to this same version, or the driver
+            # bundled in the pip package won't match these browsers.
+            PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+            PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+
             shellHook = ''
               mkdir -p .kaggle/input .kaggle/working
               export KAGGLE_INPUT_DIR="$PWD/.kaggle/input"
