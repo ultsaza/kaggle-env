@@ -28,6 +28,7 @@
             zlib
             openssl
             libffi
+            expat
             libGL
             glib
             libxext

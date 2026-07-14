@@ -33,8 +33,18 @@ export _KPV_LIBPATH="$libpath"
 find "$venv" -type f \( -name '*.so' -o -name '*.so.*' \) -print0 |
   xargs -0 -r -P "$(nproc 2>/dev/null || echo 4)" -n 32 bash -c '
     set -u
+    rc=0
     for f in "$@"; do
       old=$(patchelf --print-rpath "$f" 2>/dev/null) || continue  # skip non-ELF
+
+      # Leave files alone unless something they need is actually unresolved.
+      # patchelf (0.15.2) corrupts some small/minimal .so files (observed with
+      # mypyc-compiled extensions, e.g. black) on ANY rewrite, even a no-op
+      # --remove-rpath, so touching files that do not need it is not just
+      # wasted work -- it can crash imports that worked fine before.
+      if ! env -u LD_LIBRARY_PATH ldd "$f" 2>/dev/null | grep -q "not found"; then
+        continue
+      fi
 
       # Existing entries first ($ORIGIN dirs must keep winning), drop stale
       # /nix/store entries, append the current native library path.
@@ -50,15 +60,28 @@ find "$venv" -type f \( -name '*.so' -o -name '*.so.*' \) -print0 |
         continue
       fi
 
-      # Break hardlinks into ~/.cache/uv before mutating the inode.
+      # Break hardlinks into ~/.cache/uv before mutating the inode. If this
+      # fails (e.g. disk full), do NOT fall through to patchelf: it would
+      # rewrite the still-shared inode in place and corrupt the uv cache for
+      # every other project on the machine.
       if [ "$(stat -c %h "$f")" -gt 1 ]; then
-        cp -p "$f" "$f.kpv-tmp.$$" && mv -f "$f.kpv-tmp.$$" "$f"
+        if ! cp -p "$f" "$f.kpv-tmp.$$" || ! mv -f "$f.kpv-tmp.$$" "$f"; then
+          printf "kaggle-patch-venv: warning: could not break hardlink for %s\n" "$f" >&2
+          rm -f "$f.kpv-tmp.$$"
+          rc=1
+          continue
+        fi
       fi
 
-      patchelf --force-rpath --set-rpath "$new" "$f" ||
+      patchelf --force-rpath --set-rpath "$new" "$f" || {
         printf "kaggle-patch-venv: warning: could not patch %s\n" "$f" >&2
+        rc=1
+      }
     done
-    exit 0
+    exit "$rc"
   ' _
 
+# Only remember success: if any file failed above, the pipeline (and, thanks
+# to pipefail, this script) exits non-zero without writing the stamp, so the
+# next run retries instead of silently treating a half-patched venv as done.
 printf '%s' "$key" > "$stamp"
