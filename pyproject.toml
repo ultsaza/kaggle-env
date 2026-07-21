@@ -94,6 +94,7 @@ dependencies = [
     "pympler>=1.1",
     "pypdf>=6.13.2",
     "pytesseract>=0.3.13",
+    "pytest>=9.1.1",
     "python-lsp-server>=1.14.0",
     "pytorch-ignite>=0.6.0.dev20260611",
     "pytorch-lightning>=2.6.5",
